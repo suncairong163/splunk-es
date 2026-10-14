@@ -1,0 +1,59 @@
+name: splunk-es
+
+services:
+  splunk-enterprise-security:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SPLUNK_IMAGE_TAG: ${SPLUNK_IMAGE_TAG:-10.2.1}
+    image: ${SPLUNK_ES_IMAGE:-soc-splunk-es:10.2.1}
+    platform: ${SPLUNK_PLATFORM:-linux/amd64}
+    container_name: ${SPLUNK_CONTAINER_NAME:-splunk-enterprise-security}
+    hostname: ${SPLUNK_HOSTNAME:-splunk}
+
+    # 使用宿主机网络（不再需要 ports 映射）
+    network_mode: host
+
+    env_file:
+      - .env
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
+      SPLUNK_LAUNCH_CONF: OPTIMISTIC_ABOUT_FILE_LOCKING=1
+
+      # Splunk Web 监听端口（关键：改为 8001）
+      SPLUNK_HTTP_PORT: 8001
+
+      # Splunk 管理端口（保持默认 8089）
+      SPLUNK_MGMT_PORT: 8089
+
+      # Splunk HEC 端口（保持默认 8088）
+      SPLUNK_HEC_PORT: 8088
+
+      SPLUNK_ROOT_ENDPOINT: ${SPLUNK_ROOT_ENDPOINT:-/}
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD:?Set SPLUNK_PASSWORD in .env}
+      SPLUNK_HEC_TOKEN: ${SPLUNK_HEC_TOKEN:-}
+
+      SPLUNK_BEFORE_START_CMD_1: /bin/bash /sbin/seed-es-apps.sh
+      ES_SPL: /opt/splunk-packages/splunk-enterprise-security_830.spl
+      SOC_DEFAULTS_SRC: /tmp/soc-defaults
+
+    volumes:
+      - ${SPLUNK_DATA_ETC:-./data/etc}:/opt/splunk/etc
+      - ${SPLUNK_DATA_VAR:-./data/var}:/opt/splunk/var
+      - ${SPLUNK_CONFIG_DIR:-./config/default}:/tmp/soc-defaults:ro
+      - ${SPLUNK_LICENSE_DIR:-./licenses}:/licenses:ro
+    mem_limit: ${SPLUNK_MEM_LIMIT:-8g}
+    shm_size: ${SPLUNK_SHM_SIZE:-1gb}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8001/ >/dev/null || curl -fsS http://127.0.0.1:8001/en-US/ >/dev/null",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 600s
